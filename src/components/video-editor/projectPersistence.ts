@@ -4,6 +4,7 @@ import { normalizeProjectMedia } from "@/lib/recordingSession";
 import { ASPECT_RATIOS, type AspectRatio } from "@/utils/aspectRatioUtils";
 import {
 	type AnnotationRegion,
+	type AudioTrack,
 	type CropRegion,
 	DEFAULT_ANNOTATION_POSITION,
 	DEFAULT_ANNOTATION_SIZE,
@@ -42,6 +43,7 @@ export interface ProjectEditorState {
 	trimRegions: TrimRegion[];
 	speedRegions: SpeedRegion[];
 	annotationRegions: AnnotationRegion[];
+	audioTracks: AudioTrack[];
 	aspectRatio: AspectRatio;
 	webcamLayoutPreset: WebcamLayoutPreset;
 	webcamPosition: WebcamPosition | null;
@@ -304,6 +306,37 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				})
 		: [];
 
+	const normalizedAudioTracks: AudioTrack[] = Array.isArray(editor.audioTracks)
+		? editor.audioTracks
+				.filter((track): track is AudioTrack =>
+					Boolean(track && typeof track.id === "string" && typeof track.filePath === "string"),
+				)
+				.map((track) => {
+					const rawStart = isFiniteNumber(track.startMs) ? Math.round(track.startMs) : 0;
+					const durationMs =
+						isFiniteNumber(track.durationMs) && track.durationMs > 0 ? track.durationMs : 5000;
+					const rawEnd = isFiniteNumber(track.endMs)
+						? Math.round(track.endMs)
+						: rawStart + durationMs;
+					const startMs = Math.max(0, Math.min(rawStart, rawEnd));
+					const endMs = Math.max(startMs + 100, rawEnd);
+
+					return {
+						id: track.id,
+						startMs,
+						endMs,
+						filePath: track.filePath,
+						name: typeof track.name === "string" ? track.name : "Audio",
+						volume: clamp(isFiniteNumber(track.volume) ? track.volume : 1, 0, 1),
+						fadeInMs: isFiniteNumber(track.fadeInMs) ? Math.max(0, track.fadeInMs) : 0,
+						fadeOutMs: isFiniteNumber(track.fadeOutMs) ? Math.max(0, track.fadeOutMs) : 0,
+						trimStartMs: isFiniteNumber(track.trimStartMs) ? Math.max(0, track.trimStartMs) : 0,
+						trimEndMs: isFiniteNumber(track.trimEndMs) ? Math.max(0, track.trimEndMs) : 0,
+						durationMs,
+					};
+				})
+		: [];
+
 	const rawCropX = isFiniteNumber(editor.cropRegion?.x)
 		? editor.cropRegion.x
 		: DEFAULT_CROP_REGION.x;
@@ -345,6 +378,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		trimRegions: normalizedTrimRegions,
 		speedRegions: normalizedSpeedRegions,
 		annotationRegions: normalizedAnnotationRegions,
+		audioTracks: normalizedAudioTracks,
 		aspectRatio:
 			editor.aspectRatio && validAspectRatios.has(editor.aspectRatio) ? editor.aspectRatio : "16:9",
 		webcamLayoutPreset:

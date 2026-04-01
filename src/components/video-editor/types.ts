@@ -141,6 +141,20 @@ export interface SpeedRegion {
 	speed: PlaybackSpeed;
 }
 
+export interface AudioTrack {
+	id: string;
+	startMs: number;
+	endMs: number;
+	filePath: string;
+	name: string;
+	volume: number;
+	fadeInMs: number;
+	fadeOutMs: number;
+	trimStartMs: number;
+	trimEndMs: number;
+	durationMs: number;
+}
+
 export const SPEED_OPTIONS: Array<{ speed: PlaybackSpeed; label: string }> = [
 	{ speed: 0.25, label: "0.25×" },
 	{ speed: 0.5, label: "0.5×" },

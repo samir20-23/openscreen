@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import type {
 	AnnotationRegion,
+	AudioTrack,
 	CropRegion,
 	SpeedRegion,
 	TrimRegion,
@@ -22,6 +23,7 @@ export interface EditorState {
 	trimRegions: TrimRegion[];
 	speedRegions: SpeedRegion[];
 	annotationRegions: AnnotationRegion[];
+	audioTracks: AudioTrack[];
 	cropRegion: CropRegion;
 	wallpaper: string;
 	shadowIntensity: number;
@@ -39,6 +41,7 @@ export const INITIAL_EDITOR_STATE: EditorState = {
 	trimRegions: [],
 	speedRegions: [],
 	annotationRegions: [],
+	audioTracks: [],
 	cropRegion: DEFAULT_CROP_REGION,
 	wallpaper: "/wallpapers/wallpaper1.jpg",
 	shadowIntensity: 0,

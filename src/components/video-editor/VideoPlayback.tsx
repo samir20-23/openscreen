@@ -33,6 +33,7 @@ import {
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import {
 	type AnnotationRegion,
+	type AudioTrack,
 	type SpeedRegion,
 	type TrimRegion,
 	ZOOM_DEPTH_SCALES,
@@ -93,6 +94,7 @@ interface VideoPlaybackProps {
 	onSelectAnnotation?: (id: string | null) => void;
 	onAnnotationPositionChange?: (id: string, position: { x: number; y: number }) => void;
 	onAnnotationSizeChange?: (id: string, size: { width: number; height: number }) => void;
+	audioTracks?: AudioTrack[];
 }
 
 export interface VideoPlaybackRef {
@@ -141,6 +143,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			onSelectAnnotation,
 			onAnnotationPositionChange,
 			onAnnotationSizeChange,
+			audioTracks = [],
 		},
 		ref,
 	) => {
@@ -148,6 +151,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
 		const containerRef = useRef<HTMLDivElement | null>(null);
 		const appRef = useRef<Application | null>(null);
+		const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+		const [audioLoaded, setAudioLoaded] = useState(false);
 		const videoSpriteRef = useRef<Sprite | null>(null);
 		const videoContainerRef = useRef<Container | null>(null);
 		const cameraContainerRef = useRef<Container | null>(null);
@@ -1107,6 +1112,81 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				}
 			};
 		}, []);
+
+		useEffect(() => {
+			const audioElements = audioElementsRef.current;
+
+			audioTracks.forEach((track) => {
+				if (!audioElements.has(track.id)) {
+					const audio = new Audio();
+					audio.src = track.filePath.startsWith("file://")
+						? track.filePath
+						: `file://${track.filePath}`;
+					audio.volume = track.volume;
+					audio.preload = "metadata";
+					audioElements.set(track.id, audio);
+				}
+			});
+
+			audioElements.forEach((audio, id) => {
+				if (!audioTracks.find((t) => t.id === id)) {
+					audio.pause();
+					audioElements.delete(id);
+				}
+			});
+
+			setAudioLoaded(true);
+		}, [audioTracks]);
+
+		useEffect(() => {
+			if (!audioLoaded) return;
+
+			const video = videoRef.current;
+			if (!video) return;
+
+			const syncAudio = () => {
+				const currentTimeMs = video.currentTime * 1000;
+				const audioElements = audioElementsRef.current;
+
+				audioElements.forEach((audio, id) => {
+					const track = audioTracks.find((t) => t.id === id);
+					if (!track) return;
+
+					audio.volume = track.volume;
+
+					if (video.paused) {
+						if (!audio.paused) audio.pause();
+						return;
+					}
+
+					const audioStartMs = track.startMs;
+					const audioEndMs = track.endMs;
+
+					if (currentTimeMs >= audioStartMs && currentTimeMs <= audioEndMs) {
+						const audioOffset = (currentTimeMs - audioStartMs) / 1000;
+
+						if (Math.abs(audio.currentTime - audioOffset) > 0.1) {
+							audio.currentTime = audioOffset;
+						}
+
+						if (audio.paused) {
+							audio.play().catch(() => {});
+						}
+					} else {
+						if (!audio.paused) audio.pause();
+					}
+				});
+			};
+
+			syncAudio();
+
+			const interval = setInterval(syncAudio, 100);
+
+			return () => {
+				clearInterval(interval);
+				audioElementsRef.current.forEach((audio) => audio.pause());
+			};
+		}, [audioLoaded, audioTracks, isPlaying]);
 
 		const isImageUrl = Boolean(
 			resolvedWallpaper &&

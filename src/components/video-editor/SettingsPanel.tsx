@@ -47,6 +47,7 @@ import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import type {
 	AnnotationRegion,
 	AnnotationType,
+	AudioTrack,
 	CropRegion,
 	FigureData,
 	PlaybackSpeed,
@@ -140,6 +141,10 @@ interface SettingsPanelProps {
 	selectedSpeedValue?: PlaybackSpeed | null;
 	onSpeedChange?: (speed: PlaybackSpeed) => void;
 	onSpeedDelete?: (id: string) => void;
+	selectedAudioTrackId?: string | null;
+	audioTracks?: AudioTrack[];
+	onAudioTrackVolumeChange?: (id: string, volume: number) => void;
+	onAudioTrackDelete?: (id: string) => void;
 	hasWebcam?: boolean;
 	webcamLayoutPreset?: WebcamLayoutPreset;
 	onWebcamLayoutPresetChange?: (preset: WebcamLayoutPreset) => void;
@@ -208,6 +213,10 @@ export function SettingsPanel({
 	selectedSpeedValue,
 	onSpeedChange,
 	onSpeedDelete,
+	selectedAudioTrackId,
+	audioTracks = [],
+	onAudioTrackVolumeChange,
+	onAudioTrackDelete,
 	hasWebcam = false,
 	webcamLayoutPreset = "picture-in-picture",
 	onWebcamLayoutPresetChange,
@@ -577,6 +586,66 @@ export function SettingsPanel({
 						</Button>
 					)}
 				</div>
+
+				{selectedAudioTrackId && audioTracks.length > 0 && (
+					<div className="mb-4 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+						<div className="flex items-center justify-between mb-3">
+							<span className="text-sm font-medium text-slate-200">
+								{t("audio.title", { defaultValue: "Audio Track" })}
+							</span>
+							<span className="text-[10px] uppercase tracking-wider font-medium text-[#9333EA] bg-[#9333EA]/10 px-2 py-0.5 rounded-full">
+								{audioTracks.find((t) => t.id === selectedAudioTrackId)?.name || "Selected"}
+							</span>
+						</div>
+						<div className="space-y-3">
+							<div>
+								<label className="text-[10px] text-slate-400 mb-1 block">
+									{t("audio.volume", { defaultValue: "Volume" })}
+								</label>
+								<Slider
+									value={[audioTracks.find((t) => t.id === selectedAudioTrackId)?.volume ?? 1]}
+									min={0}
+									max={1}
+									step={0.01}
+									onValueChange={(values) => {
+										const track = audioTracks.find((t) => t.id === selectedAudioTrackId);
+										if (track) {
+											onAudioTrackVolumeChange?.(selectedAudioTrackId, values[0]);
+										}
+									}}
+									className="w-full"
+								/>
+								<div className="flex justify-between text-[9px] text-slate-500 mt-1">
+									<span>0%</span>
+									<span>
+										{Math.round(
+											(audioTracks.find((t) => t.id === selectedAudioTrackId)?.volume ?? 1) * 100,
+										)}
+										%
+									</span>
+									<span>100%</span>
+								</div>
+							</div>
+							<Button
+								onClick={() => selectedAudioTrackId && onAudioTrackDelete?.(selectedAudioTrackId)}
+								variant="destructive"
+								size="sm"
+								className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
+							>
+								<Trash2 className="w-3 h-3" />
+								{t("audio.deleteTrack", { defaultValue: "Delete Track" })}
+							</Button>
+						</div>
+					</div>
+				)}
+
+				{!selectedAudioTrackId && audioTracks.length > 0 && (
+					<div className="mb-4 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+						<p className="text-[10px] text-slate-500 text-center">
+							{t("audio.selectTrack", { defaultValue: "Select an audio track in the timeline" })}
+						</p>
+					</div>
+				)}
 
 				<Accordion
 					type="multiple"

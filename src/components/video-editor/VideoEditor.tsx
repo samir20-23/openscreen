@@ -42,6 +42,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import TimelineEditor from "./timeline/TimelineEditor";
 import {
 	type AnnotationRegion,
+	type AudioTrack,
 	type CursorTelemetryPoint,
 	clampFocusToDepth,
 	DEFAULT_ANNOTATION_POSITION,
@@ -75,6 +76,7 @@ export default function VideoEditor() {
 		trimRegions,
 		speedRegions,
 		annotationRegions,
+		audioTracks,
 		cropRegion,
 		wallpaper,
 		shadowIntensity,
@@ -103,6 +105,7 @@ export default function VideoEditor() {
 	const [selectedTrimId, setSelectedTrimId] = useState<string | null>(null);
 	const [selectedSpeedId, setSelectedSpeedId] = useState<string | null>(null);
 	const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+	const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<string | null>(null);
 	const [isExporting, setIsExporting] = useState(false);
 	const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 	const [exportError, setExportError] = useState<string | null>(null);
@@ -135,6 +138,7 @@ export default function VideoEditor() {
 
 	const nextAnnotationIdRef = useRef(1);
 	const nextAnnotationZIndexRef = useRef(1);
+	const nextAudioTrackIdRef = useRef(1);
 	const exporterRef = useRef<VideoExporter | null>(null);
 
 	const currentProjectMedia = useMemo<ProjectMedia | null>(() => {
@@ -193,6 +197,7 @@ export default function VideoEditor() {
 				trimRegions: normalizedEditor.trimRegions,
 				speedRegions: normalizedEditor.speedRegions,
 				annotationRegions: normalizedEditor.annotationRegions,
+				audioTracks: normalizedEditor.audioTracks,
 				aspectRatio: normalizedEditor.aspectRatio,
 				webcamLayoutPreset: normalizedEditor.webcamLayoutPreset,
 				webcamPosition: normalizedEditor.webcamPosition,
@@ -262,6 +267,7 @@ export default function VideoEditor() {
 				trimRegions,
 				speedRegions,
 				annotationRegions,
+				audioTracks,
 				aspectRatio,
 				webcamLayoutPreset,
 				webcamPosition,
@@ -285,6 +291,7 @@ export default function VideoEditor() {
 		trimRegions,
 		speedRegions,
 		annotationRegions,
+		audioTracks,
 		aspectRatio,
 		webcamLayoutPreset,
 		webcamPosition,
@@ -378,6 +385,7 @@ export default function VideoEditor() {
 				trimRegions,
 				speedRegions,
 				annotationRegions,
+				audioTracks,
 				aspectRatio,
 				webcamLayoutPreset,
 				webcamPosition,
@@ -822,6 +830,76 @@ export default function VideoEditor() {
 			}
 		},
 		[selectedAnnotationId, pushState],
+	);
+
+	const handleSelectAudioTrack = useCallback((id: string | null) => {
+		setSelectedAudioTrackId(id);
+		if (id) {
+			setSelectedZoomId(null);
+			setSelectedTrimId(null);
+			setSelectedAnnotationId(null);
+		}
+	}, []);
+
+	const handleAudioTrackAdded = useCallback(
+		(span: Span, filePath: string, name: string, durationMs: number) => {
+			const id = `audio-${nextAudioTrackIdRef.current++}`;
+			const newTrack: AudioTrack = {
+				id,
+				startMs: Math.round(span.start),
+				endMs: Math.round(span.end),
+				filePath,
+				name,
+				volume: 1,
+				fadeInMs: 0,
+				fadeOutMs: 0,
+				trimStartMs: 0,
+				trimEndMs: 0,
+				durationMs,
+			};
+			pushState((prev) => ({ audioTracks: [...prev.audioTracks, newTrack] }));
+			setSelectedAudioTrackId(id);
+			setSelectedZoomId(null);
+			setSelectedTrimId(null);
+			setSelectedAnnotationId(null);
+		},
+		[pushState],
+	);
+
+	const handleAudioTrackSpanChange = useCallback(
+		(id: string, span: Span) => {
+			pushState((prev) => ({
+				audioTracks: prev.audioTracks.map((track) =>
+					track.id === id
+						? { ...track, startMs: Math.round(span.start), endMs: Math.round(span.end) }
+						: track,
+				),
+			}));
+		},
+		[pushState],
+	);
+
+	const handleAudioTrackDelete = useCallback(
+		(id: string) => {
+			pushState((prev) => ({
+				audioTracks: prev.audioTracks.filter((track) => track.id !== id),
+			}));
+			if (selectedAudioTrackId === id) {
+				setSelectedAudioTrackId(null);
+			}
+		},
+		[selectedAudioTrackId, pushState],
+	);
+
+	const handleAudioTrackVolumeChange = useCallback(
+		(id: string, volume: number) => {
+			pushState((prev) => ({
+				audioTracks: prev.audioTracks.map((track) =>
+					track.id === id ? { ...track, volume } : track,
+				),
+			}));
+		},
+		[pushState],
 	);
 
 	const handleAnnotationContentChange = useCallback(
@@ -1502,6 +1580,7 @@ export default function VideoEditor() {
 											onSelectAnnotation={handleSelectAnnotation}
 											onAnnotationPositionChange={handleAnnotationPositionChange}
 											onAnnotationSizeChange={handleAnnotationSizeChange}
+											audioTracks={audioTracks}
 										/>
 									</div>
 								</div>
@@ -1559,6 +1638,12 @@ export default function VideoEditor() {
 									onAnnotationDelete={handleAnnotationDelete}
 									selectedAnnotationId={selectedAnnotationId}
 									onSelectAnnotation={handleSelectAnnotation}
+									audioTracks={audioTracks}
+									onAudioTrackAdded={handleAudioTrackAdded}
+									onAudioTrackSpanChange={handleAudioTrackSpanChange}
+									onAudioTrackDelete={handleAudioTrackDelete}
+									selectedAudioTrackId={selectedAudioTrackId}
+									onSelectAudioTrack={handleSelectAudioTrack}
 									aspectRatio={aspectRatio}
 									onAspectRatioChange={(ar) =>
 										pushState({
@@ -1653,6 +1738,10 @@ export default function VideoEditor() {
 						}
 						onSpeedChange={handleSpeedChange}
 						onSpeedDelete={handleSpeedDelete}
+						selectedAudioTrackId={selectedAudioTrackId}
+						audioTracks={audioTracks}
+						onAudioTrackVolumeChange={handleAudioTrackVolumeChange}
+						onAudioTrackDelete={handleAudioTrackDelete}
 						unsavedExport={unsavedExport}
 						onSaveUnsavedExport={handleSaveUnsavedExport}
 					/>
