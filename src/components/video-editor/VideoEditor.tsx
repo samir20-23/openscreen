@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { INITIAL_EDITOR_STATE, useEditorHistory } from "@/hooks/useEditorHistory";
-import { type Locale, SUPPORTED_LOCALES } from "@/i18n/config";
+// Locale-related imports removed as unused
 import {
 	calculateOutputDimensions,
 	type ExportFormat,
@@ -1176,7 +1176,7 @@ export default function VideoEditor() {
 		e.preventDefault();
 	}, []);
 
-	const handleDragLeave = useCallback((e: React.DragEvent) => {
+	const handleDragLeave = useCallback(() => {
 		// No-op for now
 	}, []);
 

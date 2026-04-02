@@ -480,8 +480,8 @@ export function SettingsPanel({
 	}
 
 	return (
-		<div className="flex-[2] min-w-0 bg-[#09090b] border border-white/5 rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
-			<div className="flex-1 overflow-y-auto custom-scrollbar p-4 pb-0">
+		<div className="flex-[2] min-w-0 bg-[#0d0d0f]/50 backdrop-blur-md border border-white/5 rounded-2xl flex flex-col shadow-2xl h-full overflow-hidden">
+			<div className="flex-1 overflow-y-auto studio-scroll p-4 pb-0">
 				<div className="mb-4">
 					<div className="flex items-center justify-between mb-3">
 						<span className="text-sm font-medium text-slate-200">{t("zoom.level")}</span>
