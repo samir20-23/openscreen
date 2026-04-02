@@ -1,5 +1,5 @@
 import type { Span } from "dnd-timeline";
-import { FolderOpen, Languages, Save } from "lucide-react";
+import { Film, Layers as LayersIcon, Music, Plus, Settings2, Type } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -7,7 +7,6 @@ import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { INITIAL_EDITOR_STATE, useEditorHistory } from "@/hooks/useEditorHistory";
 import { type Locale, SUPPORTED_LOCALES } from "@/i18n/config";
-import { getLocaleName } from "@/i18n/loader";
 import {
 	calculateOutputDimensions,
 	type ExportFormat,
@@ -28,6 +27,7 @@ import {
 	isPortraitAspectRatio,
 } from "@/utils/aspectRatioUtils";
 import { ExportDialog } from "./ExportDialog";
+import { TopBar } from "./layout/TopBar";
 import PlaybackControls from "./PlaybackControls";
 import {
 	createProjectData,
@@ -218,13 +218,9 @@ export default function VideoEditor() {
 	const nextSubtitleIdRef = useRef(1);
 	const nextTransitionIdRef = useRef(1);
 
-	// Drag-and-drop state
-	const [isDragOver, setIsDragOver] = useState(false);
-
 	const { shortcuts, isMac } = useShortcuts();
 	const t = useScopedT("editor");
-	const ts = useScopedT("settings");
-	const { locale, setLocale } = useI18n();
+	useI18n();
 
 	const nextAnnotationIdRef = useRef(1);
 	const nextAnnotationZIndexRef = useRef(1);
@@ -1178,21 +1174,15 @@ export default function VideoEditor() {
 
 	const handleDragOver = useCallback((e: React.DragEvent) => {
 		e.preventDefault();
-		const hasFiles = e.dataTransfer.types.includes("Files");
-		if (hasFiles) setIsDragOver(true);
 	}, []);
 
 	const handleDragLeave = useCallback((e: React.DragEvent) => {
-		// Only hide overlay when leaving the root element
-		if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-			setIsDragOver(false);
-		}
+		// No-op for now
 	}, []);
 
 	const handleDrop = useCallback(
 		async (e: React.DragEvent) => {
 			e.preventDefault();
-			setIsDragOver(false);
 
 			const files = Array.from(e.dataTransfer.files);
 			if (!files.length) return;
@@ -1625,11 +1615,11 @@ export default function VideoEditor() {
 						// Adjust bitrate for lower resolutions
 						const totalPixels = exportWidth * exportHeight;
 						if (totalPixels <= 1280 * 720) {
-							bitrate = 10_000_000;
+							bitrate = 15_000_000;
 						} else if (totalPixels <= 1920 * 1080) {
-							bitrate = 20_000_000;
+							bitrate = 35_000_000;
 						} else {
-							bitrate = 30_000_000;
+							bitrate = 50_000_000;
 						}
 					}
 
@@ -1800,6 +1790,13 @@ export default function VideoEditor() {
 		}
 	}, []);
 
+	const projectName = useMemo(() => {
+		if (!currentProjectPath) return "Untitled Project";
+		const parts = currentProjectPath.split(/[/\\]/);
+		const last = parts[parts.length - 1];
+		return last.endsWith(".openscreen") ? last.slice(0, -11) : last;
+	}, [currentProjectPath]);
+
 	if (loading) {
 		return (
 			<div className="flex items-center justify-center h-screen bg-background">
@@ -1826,329 +1823,357 @@ export default function VideoEditor() {
 
 	return (
 		<div
-			className="flex flex-col h-screen bg-[#09090b] text-slate-200 overflow-hidden selection:bg-[#34B27B]/30 relative"
+			className="flex flex-col h-screen bg-[#0d0d0f] text-slate-200 overflow-hidden selection:bg-[#34B27B]/30 relative"
 			onDragOver={handleDragOver}
 			onDragLeave={handleDragLeave}
 			onDrop={(e) => {
 				void handleDrop(e);
 			}}
 		>
-			{/* Drag-and-drop overlay */}
-			{isDragOver && (
-				<div className="absolute inset-0 z-[200] bg-black/60 backdrop-blur-sm border-2 border-dashed border-[#34B27B] rounded-lg flex items-center justify-center pointer-events-none">
-					<div className="flex flex-col items-center gap-3 text-center">
-						<div className="w-16 h-16 rounded-full bg-[#34B27B]/20 border border-[#34B27B]/40 flex items-center justify-center">
-							<svg
-								className="w-8 h-8 text-[#34B27B]"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
-							>
-								<path
-									strokeLinecap="round"
-									strokeLinejoin="round"
-									strokeWidth={2}
-									d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-								/>
-							</svg>
-						</div>
-						<div className="text-[#34B27B] font-semibold text-lg">Drop to Import</div>
-						<div className="text-slate-400 text-sm">
-							Video, Audio, Image, or Subtitles (.srt/.vtt)
-						</div>
-					</div>
-				</div>
-			)}
+			<TopBar
+				projectName={projectName}
+				onSave={handleSaveProject}
+				onExport={handleOpenExportDialog}
+				onLoad={handleLoadProject}
+				isSaving={false}
+			/>
 
-			<div
-				className="h-10 flex-shrink-0 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-6 z-50"
-				style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-			>
-				<div
-					className="flex-1 flex items-center gap-1"
-					style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-				>
-					<div
-						className={`flex items-center gap-1 px-2 py-1 rounded-md text-white/50 hover:text-white/90 hover:bg-white/10 transition-all duration-150 ${isMac ? "ml-14" : "ml-2"}`}
+			<div className="flex-1 flex min-h-0 relative overflow-hidden bg-[#0d0d0f]">
+				<PanelGroup direction="horizontal">
+					<Panel
+						defaultSize={18}
+						minSize={15}
+						maxSize={25}
+						className="flex flex-col border-r border-white/5 bg-[#0d0d0f]/50"
 					>
-						<Languages size={14} />
-						<select
-							value={locale}
-							onChange={(e) => setLocale(e.target.value as Locale)}
-							className="bg-transparent text-[11px] font-medium outline-none cursor-pointer appearance-none pr-1"
-							style={{ color: "inherit" }}
-						>
-							{SUPPORTED_LOCALES.map((loc) => (
-								<option key={loc} value={loc} className="bg-[#09090b] text-white">
-									{getLocaleName(loc)}
-								</option>
-							))}
-						</select>
-					</div>
-					<button
-						type="button"
-						onClick={handleLoadProject}
-						className="flex items-center gap-1 px-2 py-1 rounded-md text-white/50 hover:text-white/90 hover:bg-white/10 transition-all duration-150 text-[11px] font-medium"
-					>
-						<FolderOpen size={14} />
-						{ts("project.load")}
-					</button>
-					<button
-						type="button"
-						onClick={handleSaveProject}
-						className="flex items-center gap-1 px-2 py-1 rounded-md text-white/50 hover:text-white/90 hover:bg-white/10 transition-all duration-150 text-[11px] font-medium"
-					>
-						<Save size={14} />
-						{ts("project.save")}
-					</button>
-				</div>
-			</div>
+						<div className="flex flex-col h-full overflow-hidden">
+							<div className="p-4 border-b border-white/5 flex items-center justify-between">
+								<h3 className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+									Media & Layers
+								</h3>
+								<button
+									type="button"
+									onClick={() => handleLoadProject()}
+									className="p-1 hover:bg-white/5 rounded transition-colors text-white/60"
+								>
+									<Plus size={14} />
+								</button>
+							</div>
 
-			<div className="flex-1 p-5 gap-4 flex min-h-0 relative">
-				{/* Left Column - Video & Timeline */}
-				<div className="flex-[7] flex flex-col gap-3 min-w-0 h-full">
-					<PanelGroup direction="vertical" className="gap-3">
-						{/* Top section: video preview and controls */}
-						<Panel defaultSize={70} maxSize={70} minSize={40}>
-							<div
-								ref={playerContainerRef}
-								className={
-									isFullscreen
-										? "fixed inset-0 z-[99999] w-full h-full flex flex-col items-center justify-center bg-[#09090b]"
-										: "w-full h-full flex flex-col items-center justify-center bg-black/40 rounded-2xl border border-white/5 shadow-2xl overflow-hidden relative"
-								}
-							>
-								{/* Video preview */}
-								<div className="w-full flex justify-center items-center flex-auto mt-1.5">
+							<div className="flex-1 overflow-y-auto p-2 space-y-2">
+								{videoPath && (
+									<div className="p-2 rounded-lg bg-white/5 border border-white/5 flex items-center gap-3 group hover:border-[#34B27B]/30 transition-all cursor-default">
+										<div className="w-10 h-10 rounded bg-black/40 flex items-center justify-center text-[#34B27B]">
+											<Film size={18} />
+										</div>
+										<div className="flex-1 min-w-0">
+											<div className="text-[11px] font-medium text-white/80 truncate">
+												Main Layer
+											</div>
+											<div className="text-[9px] text-white/40 truncate">Video Track</div>
+										</div>
+									</div>
+								)}
+
+								{audioTracks.map((track) => (
 									<div
-										className="relative flex justify-center items-center w-auto h-full max-w-full box-border"
-										style={{
-											aspectRatio:
-												aspectRatio === "native"
-													? getNativeAspectRatioValue(
-															videoPlaybackRef.current?.video?.videoWidth || 1920,
-															videoPlaybackRef.current?.video?.videoHeight || 1080,
-															cropRegion,
-														)
-													: getAspectRatioValue(aspectRatio),
-										}}
+										key={track.id}
+										className="p-2 rounded-lg bg-white/5 border border-white/5 flex items-center gap-3 group hover:border-blue-400/30 transition-all cursor-default"
 									>
-										<VideoPlayback
-											key={`${videoPath || "no-video"}:${webcamVideoPath || "no-webcam"}`}
-											aspectRatio={aspectRatio}
-											ref={videoPlaybackRef}
-											videoPath={videoPath || ""}
-											webcamVideoPath={webcamVideoPath || undefined}
-											webcamLayoutPreset={webcamLayoutPreset}
-											webcamPosition={webcamPosition}
-											onWebcamPositionChange={(pos) => updateState({ webcamPosition: pos })}
-											onWebcamPositionDragEnd={commitState}
-											onDurationChange={setDuration}
-											onTimeUpdate={setCurrentTime}
+										<div className="w-10 h-10 rounded bg-black/40 flex items-center justify-center text-blue-400">
+											<Music size={18} />
+										</div>
+										<div className="flex-1 min-w-0">
+											<div className="text-[11px] font-medium text-white/80 truncate">
+												{track.name || "Audio Track"}
+											</div>
+											<div className="text-[9px] text-white/40 truncate">Audio</div>
+										</div>
+									</div>
+								))}
+
+								<div className="py-4 px-2 opacity-30 select-none pointer-events-none">
+									<div className="h-[1px] bg-white/10 w-full mb-4" />
+									<div className="flex items-center gap-2 mb-2">
+										<Type size={12} />
+										<div className="h-2 bg-white/20 rounded w-24" />
+									</div>
+									<div className="flex items-center gap-2">
+										<LayersIcon size={12} />
+										<div className="h-2 bg-white/20 rounded w-16" />
+									</div>
+								</div>
+							</div>
+
+							<div className="p-4 mt-auto border-t border-white/5 bg-black/20">
+								<div className="flex items-center gap-2 text-[10px] font-medium text-white/30">
+									<Settings2 size={12} />
+									<span>Workspace V2.0</span>
+								</div>
+							</div>
+						</div>
+					</Panel>
+
+					<PanelResizeHandle className="w-px bg-white/5 hover:bg-[#34B27B]/30 transition-colors z-10" />
+
+					<Panel defaultSize={55} minSize={40}>
+						<PanelGroup direction="vertical">
+							<Panel defaultSize={65} minSize={30}>
+								<div className="h-full flex flex-col items-center justify-center p-6 bg-black/20 relative">
+									<div
+										ref={playerContainerRef}
+										className={
+											isFullscreen
+												? "fixed inset-0 z-[99999] w-full h-full flex flex-col items-center justify-center bg-[#09090b]"
+												: "w-full h-full flex flex-col items-center justify-center overflow-hidden relative studio-panel"
+										}
+									>
+										<div className="w-full flex justify-center items-center flex-auto">
+											<div
+												className="relative flex justify-center items-center w-auto h-full max-w-full box-border"
+												style={{
+													aspectRatio:
+														aspectRatio === "native"
+															? getNativeAspectRatioValue(
+																	videoPlaybackRef.current?.video?.videoWidth || 1920,
+																	videoPlaybackRef.current?.video?.videoHeight || 1080,
+																	cropRegion,
+																)
+															: getAspectRatioValue(aspectRatio),
+												}}
+											>
+												<VideoPlayback
+													key={`${videoPath || "no-video"}:${webcamVideoPath || "no-webcam"}`}
+													aspectRatio={aspectRatio}
+													ref={videoPlaybackRef}
+													videoPath={videoPath || ""}
+													webcamVideoPath={webcamVideoPath || undefined}
+													webcamLayoutPreset={webcamLayoutPreset}
+													webcamPosition={webcamPosition}
+													onWebcamPositionChange={(pos) => updateState({ webcamPosition: pos })}
+													onWebcamPositionDragEnd={commitState}
+													onDurationChange={setDuration}
+													onTimeUpdate={setCurrentTime}
+													currentTime={currentTime}
+													onPlayStateChange={setIsPlaying}
+													onError={setError}
+													wallpaper={wallpaper}
+													zoomRegions={zoomRegions}
+													selectedZoomId={selectedZoomId}
+													onSelectZoom={handleSelectZoom}
+													onZoomFocusChange={handleZoomFocusChange}
+													onZoomFocusDragEnd={commitState}
+													isPlaying={isPlaying}
+													showShadow={shadowIntensity > 0}
+													shadowIntensity={shadowIntensity}
+													showBlur={showBlur}
+													motionBlurAmount={motionBlurAmount}
+													borderRadius={borderRadius}
+													padding={padding}
+													cropRegion={cropRegion}
+													trimRegions={trimRegions}
+													speedRegions={speedRegions}
+													annotationRegions={annotationRegions}
+													selectedAnnotationId={selectedAnnotationId}
+													onSelectAnnotation={handleSelectAnnotation}
+													onAnnotationPositionChange={handleAnnotationPositionChange}
+													onAnnotationSizeChange={handleAnnotationSizeChange}
+													audioTracks={audioTracks}
+												/>
+											</div>
+										</div>
+
+										<div className="w-full flex justify-center items-center h-14 flex-shrink-0 px-6 mt-4">
+											<div className="w-full max-w-[800px] studio-glass rounded-xl px-4 py-1 border border-white/5 shadow-2xl">
+												<PlaybackControls
+													isPlaying={isPlaying}
+													currentTime={currentTime}
+													duration={duration}
+													isFullscreen={isFullscreen}
+													onToggleFullscreen={toggleFullscreen}
+													onTogglePlayPause={togglePlayPause}
+													onSeek={handleSeek}
+												/>
+											</div>
+										</div>
+									</div>
+								</div>
+							</Panel>
+
+							<PanelResizeHandle className="h-px bg-white/5 hover:bg-[#34B27B]/30 transition-colors z-10" />
+
+							<Panel defaultSize={35} minSize={20}>
+								<div className="h-full bg-[#0d0d0f] border-t border-white/5 shadow-inner overflow-hidden flex flex-col p-2">
+									<div className="flex-1 bg-black/40 rounded-xl border border-white/5 overflow-hidden">
+										<TimelineEditor
+											videoDuration={duration}
 											currentTime={currentTime}
-											onPlayStateChange={setIsPlaying}
-											onError={setError}
-											wallpaper={wallpaper}
+											onSeek={handleSeek}
+											cursorTelemetry={cursorTelemetry}
 											zoomRegions={zoomRegions}
+											onZoomAdded={handleZoomAdded}
+											onZoomSuggested={handleZoomSuggested}
+											onZoomSpanChange={handleZoomSpanChange}
+											onZoomDelete={handleZoomDelete}
 											selectedZoomId={selectedZoomId}
 											onSelectZoom={handleSelectZoom}
-											onZoomFocusChange={handleZoomFocusChange}
-											onZoomFocusDragEnd={commitState}
-											isPlaying={isPlaying}
-											showShadow={shadowIntensity > 0}
-											shadowIntensity={shadowIntensity}
-											showBlur={showBlur}
-											motionBlurAmount={motionBlurAmount}
-											borderRadius={borderRadius}
-											padding={padding}
-											cropRegion={cropRegion}
 											trimRegions={trimRegions}
+											onTrimAdded={handleTrimAdded}
+											onTrimSpanChange={handleTrimSpanChange}
+											onTrimDelete={handleTrimDelete}
+											selectedTrimId={selectedTrimId}
+											onSelectTrim={handleSelectTrim}
 											speedRegions={speedRegions}
+											onSpeedAdded={handleSpeedAdded}
+											onSpeedSpanChange={handleSpeedSpanChange}
+											onSpeedDelete={handleSpeedDelete}
+											selectedSpeedId={selectedSpeedId}
+											onSelectSpeed={handleSelectSpeed}
 											annotationRegions={annotationRegions}
+											onAnnotationAdded={handleAnnotationAdded}
+											onAnnotationSpanChange={handleAnnotationSpanChange}
+											onAnnotationDelete={handleAnnotationDelete}
 											selectedAnnotationId={selectedAnnotationId}
 											onSelectAnnotation={handleSelectAnnotation}
-											onAnnotationPositionChange={handleAnnotationPositionChange}
-											onAnnotationSizeChange={handleAnnotationSizeChange}
 											audioTracks={audioTracks}
+											onAudioTrackAdded={handleAudioTrackAdded}
+											onAudioTrackSpanChange={handleAudioTrackSpanChange}
+											onAudioTrackDelete={handleAudioTrackDelete}
+											selectedAudioTrackId={selectedAudioTrackId}
+											onSelectAudioTrack={handleSelectAudioTrack}
+											subtitles={subtitles}
+											transitions={transitions}
+											onSplitAtPlayhead={handleSplitAtPlayhead}
+											aspectRatio={aspectRatio}
+											onAspectRatioChange={(ar) =>
+												pushState({
+													aspectRatio: ar,
+													webcamLayoutPreset:
+														!isPortraitAspectRatio(ar) && webcamLayoutPreset === "vertical-stack"
+															? "picture-in-picture"
+															: webcamLayoutPreset,
+												})
+											}
 										/>
 									</div>
 								</div>
-								{/* Playback controls */}
-								<div className="w-full flex justify-center items-center h-12 flex-shrink-0 px-3 py-1.5 my-1.5">
-									<div className="w-full max-w-[700px]">
-										<PlaybackControls
-											isPlaying={isPlaying}
-											currentTime={currentTime}
-											duration={duration}
-											isFullscreen={isFullscreen}
-											onToggleFullscreen={toggleFullscreen}
-											onTogglePlayPause={togglePlayPause}
-											onSeek={handleSeek}
-										/>
-									</div>
-								</div>
+							</Panel>
+						</PanelGroup>
+					</Panel>
+
+					<PanelResizeHandle className="w-px bg-white/5 hover:bg-[#34B27B]/30 transition-colors z-10" />
+
+					<Panel
+						defaultSize={27}
+						minSize={20}
+						maxSize={35}
+						className="bg-[#0d0d0f]/50 border-l border-white/5"
+					>
+						<div className="h-full flex flex-col overflow-hidden">
+							<div className="p-4 border-b border-white/5 bg-[#0d0d0f]/80 backdrop-blur-md">
+								<h2 className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+									Inspector
+								</h2>
 							</div>
-						</Panel>
-
-						<PanelResizeHandle className="bg-[#09090b]/80 hover:bg-[#09090b] transition-colors rounded-full flex items-center justify-center">
-							<div className="w-8 h-1 bg-white/20 rounded-full"></div>
-						</PanelResizeHandle>
-
-						{/* Timeline section */}
-						<Panel defaultSize={30} maxSize={60} minSize={30}>
-							<div className="h-full bg-[#09090b] rounded-2xl border border-white/5 shadow-lg overflow-hidden flex flex-col">
-								<TimelineEditor
-									videoDuration={duration}
-									currentTime={currentTime}
-									onSeek={handleSeek}
-									cursorTelemetry={cursorTelemetry}
-									zoomRegions={zoomRegions}
-									onZoomAdded={handleZoomAdded}
-									onZoomSuggested={handleZoomSuggested}
-									onZoomSpanChange={handleZoomSpanChange}
-									onZoomDelete={handleZoomDelete}
+							<div className="flex-1 overflow-y-auto studio-scroll">
+								<SettingsPanel
+									selected={wallpaper}
+									onWallpaperChange={(w) => pushState({ wallpaper: w })}
+									selectedZoomDepth={
+										selectedZoomId ? zoomRegions.find((z) => z.id === selectedZoomId)?.depth : null
+									}
+									onZoomDepthChange={(depth) => selectedZoomId && handleZoomDepthChange(depth)}
 									selectedZoomId={selectedZoomId}
-									onSelectZoom={handleSelectZoom}
-									trimRegions={trimRegions}
-									onTrimAdded={handleTrimAdded}
-									onTrimSpanChange={handleTrimSpanChange}
-									onTrimDelete={handleTrimDelete}
+									onZoomDelete={handleZoomDelete}
 									selectedTrimId={selectedTrimId}
-									onSelectTrim={handleSelectTrim}
-									speedRegions={speedRegions}
-									onSpeedAdded={handleSpeedAdded}
-									onSpeedSpanChange={handleSpeedSpanChange}
-									onSpeedDelete={handleSpeedDelete}
-									selectedSpeedId={selectedSpeedId}
-									onSelectSpeed={handleSelectSpeed}
-									annotationRegions={annotationRegions}
-									onAnnotationAdded={handleAnnotationAdded}
-									onAnnotationSpanChange={handleAnnotationSpanChange}
-									onAnnotationDelete={handleAnnotationDelete}
-									selectedAnnotationId={selectedAnnotationId}
-									onSelectAnnotation={handleSelectAnnotation}
-									audioTracks={audioTracks}
-									onAudioTrackAdded={handleAudioTrackAdded}
-									onAudioTrackSpanChange={handleAudioTrackSpanChange}
-									onAudioTrackDelete={handleAudioTrackDelete}
-									selectedAudioTrackId={selectedAudioTrackId}
-									onSelectAudioTrack={handleSelectAudioTrack}
-									subtitles={subtitles}
-									transitions={transitions}
-									onSplitAtPlayhead={handleSplitAtPlayhead}
+									onTrimDelete={handleTrimDelete}
+									shadowIntensity={shadowIntensity}
+									onShadowChange={(v) => updateState({ shadowIntensity: v })}
+									onShadowCommit={commitState}
+									showBlur={showBlur}
+									onBlurChange={(v) => pushState({ showBlur: v })}
+									motionBlurAmount={motionBlurAmount}
+									onMotionBlurChange={(v) => updateState({ motionBlurAmount: v })}
+									onMotionBlurCommit={commitState}
+									borderRadius={borderRadius}
+									onBorderRadiusChange={(v) => updateState({ borderRadius: v })}
+									onBorderRadiusCommit={commitState}
+									padding={padding}
+									onPaddingChange={(v) => updateState({ padding: v })}
+									onPaddingCommit={commitState}
+									cropRegion={cropRegion}
+									onCropChange={(r) => pushState({ cropRegion: r })}
 									aspectRatio={aspectRatio}
-									onAspectRatioChange={(ar) =>
+									hasWebcam={Boolean(webcamVideoPath)}
+									webcamLayoutPreset={webcamLayoutPreset}
+									onWebcamLayoutPresetChange={(preset) =>
 										pushState({
-											aspectRatio: ar,
-											webcamLayoutPreset:
-												!isPortraitAspectRatio(ar) && webcamLayoutPreset === "vertical-stack"
-													? "picture-in-picture"
-													: webcamLayoutPreset,
+											webcamLayoutPreset: preset,
+											webcamPosition: preset === "vertical-stack" ? null : webcamPosition,
 										})
 									}
-								/>
-							</div>
-						</Panel>
-					</PanelGroup>
-				</div>
-
-				{/* Right section: settings panel */}
-				<div className="flex-[3] min-w-[280px] max-w-[420px] h-full">
-					<SettingsPanel
-						selected={wallpaper}
-						onWallpaperChange={(w) => pushState({ wallpaper: w })}
-						selectedZoomDepth={
-							selectedZoomId ? zoomRegions.find((z) => z.id === selectedZoomId)?.depth : null
-						}
-						onZoomDepthChange={(depth) => selectedZoomId && handleZoomDepthChange(depth)}
-						selectedZoomId={selectedZoomId}
-						onZoomDelete={handleZoomDelete}
-						selectedTrimId={selectedTrimId}
-						onTrimDelete={handleTrimDelete}
-						shadowIntensity={shadowIntensity}
-						onShadowChange={(v) => updateState({ shadowIntensity: v })}
-						onShadowCommit={commitState}
-						showBlur={showBlur}
-						onBlurChange={(v) => pushState({ showBlur: v })}
-						motionBlurAmount={motionBlurAmount}
-						onMotionBlurChange={(v) => updateState({ motionBlurAmount: v })}
-						onMotionBlurCommit={commitState}
-						borderRadius={borderRadius}
-						onBorderRadiusChange={(v) => updateState({ borderRadius: v })}
-						onBorderRadiusCommit={commitState}
-						padding={padding}
-						onPaddingChange={(v) => updateState({ padding: v })}
-						onPaddingCommit={commitState}
-						cropRegion={cropRegion}
-						onCropChange={(r) => pushState({ cropRegion: r })}
-						aspectRatio={aspectRatio}
-						hasWebcam={Boolean(webcamVideoPath)}
-						webcamLayoutPreset={webcamLayoutPreset}
-						onWebcamLayoutPresetChange={(preset) =>
-							pushState({
-								webcamLayoutPreset: preset,
-								webcamPosition: preset === "vertical-stack" ? null : webcamPosition,
-							})
-						}
-						videoElement={videoPlaybackRef.current?.video || null}
-						exportQuality={exportQuality}
-						onExportQualityChange={setExportQuality}
-						exportFormat={exportFormat}
-						onExportFormatChange={setExportFormat}
-						gifFrameRate={gifFrameRate}
-						onGifFrameRateChange={setGifFrameRate}
-						gifLoop={gifLoop}
-						onGifLoopChange={setGifLoop}
-						gifSizePreset={gifSizePreset}
-						onGifSizePresetChange={setGifSizePreset}
-						gifOutputDimensions={calculateOutputDimensions(
-							videoPlaybackRef.current?.video?.videoWidth || 1920,
-							videoPlaybackRef.current?.video?.videoHeight || 1080,
-							gifSizePreset,
-							GIF_SIZE_PRESETS,
-							aspectRatio === "native"
-								? getNativeAspectRatioValue(
+									videoElement={videoPlaybackRef.current?.video || null}
+									exportQuality={exportQuality}
+									onExportQualityChange={setExportQuality}
+									exportFormat={exportFormat}
+									onExportFormatChange={setExportFormat}
+									gifFrameRate={gifFrameRate}
+									onGifFrameRateChange={setGifFrameRate}
+									gifLoop={gifLoop}
+									onGifLoopChange={setGifLoop}
+									gifSizePreset={gifSizePreset}
+									onGifSizePresetChange={setGifSizePreset}
+									gifOutputDimensions={calculateOutputDimensions(
 										videoPlaybackRef.current?.video?.videoWidth || 1920,
 										videoPlaybackRef.current?.video?.videoHeight || 1080,
-										cropRegion,
-									)
-								: getAspectRatioValue(aspectRatio),
-						)}
-						onExport={handleOpenExportDialog}
-						selectedAnnotationId={selectedAnnotationId}
-						annotationRegions={annotationRegions}
-						onAnnotationContentChange={handleAnnotationContentChange}
-						onAnnotationTypeChange={handleAnnotationTypeChange}
-						onAnnotationStyleChange={handleAnnotationStyleChange}
-						onAnnotationFigureDataChange={handleAnnotationFigureDataChange}
-						onAnnotationDelete={handleAnnotationDelete}
-						selectedSpeedId={selectedSpeedId}
-						selectedSpeedValue={
-							selectedSpeedId
-								? (speedRegions.find((r) => r.id === selectedSpeedId)?.speed ?? null)
-								: null
-						}
-						onSpeedChange={handleSpeedChange}
-						onSpeedDelete={handleSpeedDelete}
-						selectedAudioTrackId={selectedAudioTrackId}
-						audioTracks={audioTracks}
-						onAudioTrackVolumeChange={handleAudioTrackVolumeChange}
-						onAudioTrackMuteToggle={handleAudioTrackMuteToggle}
-						onAudioTrackFadeChange={handleAudioTrackFadeChange}
-						onAudioTrackTrimChange={handleAudioTrackTrimChange}
-						onAudioTrackDelete={handleAudioTrackDelete}
-						subtitles={subtitles}
-						onSubtitleAdded={handleSubtitleAdded}
-						onSubtitleChange={handleSubtitleChange}
-						onSubtitleDelete={handleSubtitleDelete}
-						transitions={transitions}
-						onTransitionAdded={handleTransitionAdded}
-						onTransitionChange={handleTransitionChange}
-						onTransitionDelete={handleTransitionDelete}
-						unsavedExport={unsavedExport}
-						onSaveUnsavedExport={handleSaveUnsavedExport}
-					/>
-				</div>
+										gifSizePreset,
+										GIF_SIZE_PRESETS,
+										aspectRatio === "native"
+											? getNativeAspectRatioValue(
+													videoPlaybackRef.current?.video?.videoWidth || 1920,
+													videoPlaybackRef.current?.video?.videoHeight || 1080,
+													cropRegion,
+												)
+											: getAspectRatioValue(aspectRatio),
+									)}
+									onExport={handleOpenExportDialog}
+									selectedAnnotationId={selectedAnnotationId}
+									annotationRegions={annotationRegions}
+									onAnnotationContentChange={handleAnnotationContentChange}
+									onAnnotationTypeChange={handleAnnotationTypeChange}
+									onAnnotationStyleChange={handleAnnotationStyleChange}
+									onAnnotationFigureDataChange={handleAnnotationFigureDataChange}
+									onAnnotationDelete={handleAnnotationDelete}
+									selectedSpeedId={selectedSpeedId}
+									selectedSpeedValue={
+										selectedSpeedId
+											? (speedRegions.find((r) => r.id === selectedSpeedId)?.speed ?? null)
+											: null
+									}
+									onSpeedChange={handleSpeedChange}
+									onSpeedDelete={handleSpeedDelete}
+									selectedAudioTrackId={selectedAudioTrackId}
+									audioTracks={audioTracks}
+									onAudioTrackVolumeChange={handleAudioTrackVolumeChange}
+									onAudioTrackMuteToggle={handleAudioTrackMuteToggle}
+									onAudioTrackFadeChange={handleAudioTrackFadeChange}
+									onAudioTrackTrimChange={handleAudioTrackTrimChange}
+									onAudioTrackDelete={handleAudioTrackDelete}
+									subtitles={subtitles}
+									onSubtitleAdded={handleSubtitleAdded}
+									onSubtitleChange={handleSubtitleChange}
+									onSubtitleDelete={handleSubtitleDelete}
+									transitions={transitions}
+									onTransitionAdded={handleTransitionAdded}
+									onTransitionChange={handleTransitionChange}
+									onTransitionDelete={handleTransitionDelete}
+									unsavedExport={unsavedExport}
+									onSaveUnsavedExport={handleSaveUnsavedExport}
+								/>
+							</div>
+						</div>
+					</Panel>
+				</PanelGroup>
 			</div>
 
 			<ExportDialog

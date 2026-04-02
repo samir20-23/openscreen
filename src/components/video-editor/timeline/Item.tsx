@@ -1,6 +1,6 @@
 import type { Span } from "dnd-timeline";
 import { useItem } from "dnd-timeline";
-import { Gauge, MessageSquare, Music, Scissors, ZoomIn } from "lucide-react";
+import { Film, Gauge, MessageSquare, Music, Scissors, Sparkles, ZoomIn } from "lucide-react";
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import glassStyles from "./ItemGlass.module.css";
@@ -75,7 +75,9 @@ export default function Item({
 				? glassStyles.glassAmber
 				: isAudio
 					? glassStyles.glassPurple
-					: glassStyles.glassYellow;
+					: variant === "video"
+						? glassStyles.glassGreen
+						: glassStyles.glassYellow;
 
 	const endCapColor = isZoom
 		? "#21916A"
@@ -85,7 +87,9 @@ export default function Item({
 				? "#d97706"
 				: isAudio
 					? "#9333EA"
-					: "#B4A046";
+					: variant === "video"
+						? "#34B27B"
+						: "#B4A046";
 
 	const timeLabel = useMemo(
 		() => `${formatMs(span.start)} – ${formatMs(span.end)}`,
@@ -169,6 +173,20 @@ export default function Item({
 							) : isAudio ? (
 								<>
 									<Music className="w-3.5 h-3.5 shrink-0" />
+									<span className="text-[11px] font-semibold tracking-tight whitespace-nowrap">
+										{children}
+									</span>
+								</>
+							) : variant === "video" ? (
+								<>
+									<Film className="w-3.5 h-3.5 shrink-0" />
+									<span className="text-[11px] font-semibold tracking-tight whitespace-nowrap">
+										{children || "Video"}
+									</span>
+								</>
+							) : variant === "transition" || variant === "subtitle" ? (
+								<>
+									<Sparkles className="w-3.5 h-3.5 shrink-0" />
 									<span className="text-[11px] font-semibold tracking-tight whitespace-nowrap">
 										{children}
 									</span>
