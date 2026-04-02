@@ -12,10 +12,14 @@ import {
 	DEFAULT_CROP_REGION,
 	DEFAULT_FIGURE_DATA,
 	DEFAULT_PLAYBACK_SPEED,
+	DEFAULT_SUBTITLE_STYLE,
 	DEFAULT_WEBCAM_LAYOUT_PRESET,
 	DEFAULT_WEBCAM_POSITION,
 	DEFAULT_ZOOM_DEPTH,
 	type SpeedRegion,
+	type SubtitleEntry,
+	type TransitionRegion,
+	type TransitionType,
 	type TrimRegion,
 	type WebcamLayoutPreset,
 	type WebcamPosition,
@@ -44,6 +48,8 @@ export interface ProjectEditorState {
 	speedRegions: SpeedRegion[];
 	annotationRegions: AnnotationRegion[];
 	audioTracks: AudioTrack[];
+	subtitles: SubtitleEntry[];
+	transitions: TransitionRegion[];
 	aspectRatio: AspectRatio;
 	webcamLayoutPreset: WebcamLayoutPreset;
 	webcamPosition: WebcamPosition | null;
@@ -328,6 +334,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						filePath: track.filePath,
 						name: typeof track.name === "string" ? track.name : "Audio",
 						volume: clamp(isFiniteNumber(track.volume) ? track.volume : 1, 0, 1),
+						muted: typeof track.muted === "boolean" ? track.muted : false,
 						fadeInMs: isFiniteNumber(track.fadeInMs) ? Math.max(0, track.fadeInMs) : 0,
 						fadeOutMs: isFiniteNumber(track.fadeOutMs) ? Math.max(0, track.fadeOutMs) : 0,
 						trimStartMs: isFiniteNumber(track.trimStartMs) ? Math.max(0, track.trimStartMs) : 0,
@@ -379,6 +386,28 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		speedRegions: normalizedSpeedRegions,
 		annotationRegions: normalizedAnnotationRegions,
 		audioTracks: normalizedAudioTracks,
+		subtitles: Array.isArray(editor.subtitles)
+			? (editor.subtitles as SubtitleEntry[])
+					.filter((s): s is SubtitleEntry => Boolean(s && typeof s.id === "string"))
+					.map((s) => ({
+						...s,
+						style: { ...DEFAULT_SUBTITLE_STYLE, ...(s.style ?? {}) },
+					}))
+			: [],
+		transitions: Array.isArray(editor.transitions)
+			? (editor.transitions as TransitionRegion[])
+					.filter((tr): tr is TransitionRegion => Boolean(tr && typeof tr.id === "string"))
+					.map((tr) => ({
+						id: tr.id,
+						atMs: isFiniteNumber(tr.atMs) ? Math.max(0, tr.atMs) : 0,
+						durationMs: isFiniteNumber(tr.durationMs) ? Math.max(100, tr.durationMs) : 500,
+						type: (["fade", "slide", "zoom", "blur"] as TransitionType[]).includes(
+							tr.type as TransitionType,
+						)
+							? (tr.type as TransitionType)
+							: "fade",
+					}))
+			: [],
 		aspectRatio:
 			editor.aspectRatio && validAspectRatios.has(editor.aspectRatio) ? editor.aspectRatio : "16:9",
 		webcamLayoutPreset:

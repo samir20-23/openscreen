@@ -74,6 +74,12 @@ export interface AnnotationTextStyle {
 	fontStyle: "normal" | "italic";
 	textDecoration: "none" | "underline";
 	textAlign: "left" | "center" | "right";
+	// Enhanced styles
+	strokeColor?: string;
+	strokeWidth?: number;
+	paddingX?: number;
+	paddingY?: number;
+	animated?: boolean; // fade-in animation
 }
 
 export interface AnnotationRegion {
@@ -148,12 +154,50 @@ export interface AudioTrack {
 	filePath: string;
 	name: string;
 	volume: number;
+	muted: boolean;
 	fadeInMs: number;
 	fadeOutMs: number;
 	trimStartMs: number;
 	trimEndMs: number;
 	durationMs: number;
 }
+
+// ── Subtitle / Caption types
+export interface SubtitleStyle {
+	color: string;
+	backgroundColor: string;
+	fontSize: number;
+	fontFamily: string;
+	alignment: "left" | "center" | "right";
+}
+
+export interface SubtitleEntry {
+	id: string;
+	startMs: number;
+	endMs: number;
+	text: string;
+	style: SubtitleStyle;
+}
+
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
+	color: "#ffffff",
+	backgroundColor: "rgba(0,0,0,0.5)",
+	fontSize: 28,
+	fontFamily: "Inter",
+	alignment: "center",
+};
+
+// ── Transition types
+export type TransitionType = "fade" | "slide" | "zoom" | "blur";
+
+export interface TransitionRegion {
+	id: string;
+	atMs: number;
+	durationMs: number;
+	type: TransitionType;
+}
+
+export const DEFAULT_TRANSITION_DURATION_MS = 500;
 
 export const SPEED_OPTIONS: Array<{ speed: PlaybackSpeed; label: string }> = [
 	{ speed: 0.25, label: "0.25×" },

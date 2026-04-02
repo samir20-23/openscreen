@@ -4,6 +4,8 @@ import type {
 	AudioTrack,
 	CropRegion,
 	SpeedRegion,
+	SubtitleEntry,
+	TransitionRegion,
 	TrimRegion,
 	WebcamLayoutPreset,
 	WebcamPosition,
@@ -24,6 +26,8 @@ export interface EditorState {
 	speedRegions: SpeedRegion[];
 	annotationRegions: AnnotationRegion[];
 	audioTracks: AudioTrack[];
+	subtitles: SubtitleEntry[];
+	transitions: TransitionRegion[];
 	cropRegion: CropRegion;
 	wallpaper: string;
 	shadowIntensity: number;
@@ -42,6 +46,8 @@ export const INITIAL_EDITOR_STATE: EditorState = {
 	speedRegions: [],
 	annotationRegions: [],
 	audioTracks: [],
+	subtitles: [],
+	transitions: [],
 	cropRegion: DEFAULT_CROP_REGION,
 	wallpaper: "/wallpapers/wallpaper1.jpg",
 	shadowIntensity: 0,

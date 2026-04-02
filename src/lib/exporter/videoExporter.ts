@@ -1,5 +1,6 @@
 import type {
 	AnnotationRegion,
+	AudioTrack,
 	CropRegion,
 	SpeedRegion,
 	TrimRegion,
@@ -34,6 +35,7 @@ interface VideoExporterConfig extends ExportConfig {
 	webcamLayoutPreset?: WebcamLayoutPreset;
 	webcamPosition?: { cx: number; cy: number } | null;
 	annotationRegions?: AnnotationRegion[];
+	audioTracks?: AudioTrack[];
 	previewWidth?: number;
 	previewHeight?: number;
 	onProgress?: (progress: ExportProgress) => void;
@@ -331,6 +333,7 @@ export class VideoExporter {
 						this.config.videoUrl,
 						this.config.trimRegions,
 						this.config.speedRegions,
+						this.config.audioTracks,
 						readEndSec,
 					);
 				}

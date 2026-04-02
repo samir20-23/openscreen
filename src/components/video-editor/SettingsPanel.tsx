@@ -144,7 +144,18 @@ interface SettingsPanelProps {
 	selectedAudioTrackId?: string | null;
 	audioTracks?: AudioTrack[];
 	onAudioTrackVolumeChange?: (id: string, volume: number) => void;
+	onAudioTrackMuteToggle?: (id: string) => void;
+	onAudioTrackFadeChange?: (id: string, fadeInMs: number, fadeOutMs: number) => void;
+	onAudioTrackTrimChange?: (id: string, trimStartMs: number, trimEndMs: number) => void;
 	onAudioTrackDelete?: (id: string) => void;
+	subtitles?: import("./types").SubtitleEntry[];
+	onSubtitleAdded?: (startMs: number, endMs: number) => void;
+	onSubtitleChange?: (id: string, updates: Partial<import("./types").SubtitleEntry>) => void;
+	onSubtitleDelete?: (id: string) => void;
+	transitions?: import("./types").TransitionRegion[];
+	onTransitionAdded?: (atMs: number) => void;
+	onTransitionChange?: (id: string, updates: Partial<import("./types").TransitionRegion>) => void;
+	onTransitionDelete?: (id: string) => void;
 	hasWebcam?: boolean;
 	webcamLayoutPreset?: WebcamLayoutPreset;
 	onWebcamLayoutPresetChange?: (preset: WebcamLayoutPreset) => void;

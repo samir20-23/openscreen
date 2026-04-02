@@ -50,16 +50,99 @@ import {
 	DEFAULT_ANNOTATION_STYLE,
 	DEFAULT_FIGURE_DATA,
 	DEFAULT_PLAYBACK_SPEED,
+	DEFAULT_SUBTITLE_STYLE,
+	DEFAULT_TRANSITION_DURATION_MS,
 	DEFAULT_ZOOM_DEPTH,
 	type FigureData,
 	type PlaybackSpeed,
 	type SpeedRegion,
+	type SubtitleEntry,
+	type TransitionRegion,
+	type TransitionType,
 	type TrimRegion,
 	type ZoomDepth,
 	type ZoomFocus,
 	type ZoomRegion,
 } from "./types";
 import VideoPlayback, { VideoPlaybackRef } from "./VideoPlayback";
+
+// ── SRT / VTT parser ───────────────────────────────────────────────────────
+function parseSrtVtt(text: string, format: "srt" | "vtt"): import("./types").SubtitleEntry[] {
+	const entries: import("./types").SubtitleEntry[] = [];
+	const DEFAULT_STYLE = {
+		color: "#ffffff",
+		backgroundColor: "rgba(0,0,0,0.5)",
+		fontSize: 28,
+		fontFamily: "Inter",
+		alignment: "center" as const,
+	};
+
+	if (format === "srt") {
+		// SRT: blocks separated by blank lines
+		const blocks = text.trim().split(/\n\s*\n/);
+		for (const block of blocks) {
+			const lines = block.trim().split("\n");
+			if (lines.length < 2) continue;
+			// Find timing line: 00:00:00,000 --> 00:00:00,000
+			const timingIdx = lines.findIndex((l) => l.includes("-->"));
+			if (timingIdx === -1) continue;
+			const timingLine = lines[timingIdx];
+			const match = timingLine.match(
+				/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/,
+			);
+			if (!match) continue;
+			const toMs = (hh: string, mm: string, ss: string, ms: string) =>
+				(+hh * 3600 + +mm * 60 + +ss) * 1000 + +ms;
+			const startMs = toMs(match[1], match[2], match[3], match[4]);
+			const endMs = toMs(match[5], match[6], match[7], match[8]);
+			const textContent = lines
+				.slice(timingIdx + 1)
+				.join("\n")
+				.trim();
+			if (!textContent) continue;
+			entries.push({
+				id: `sub-import-${entries.length + 1}`,
+				startMs,
+				endMs,
+				text: textContent,
+				style: { ...DEFAULT_STYLE },
+			});
+		}
+	} else {
+		// VTT: similar but may have WEBVTT header
+		const blocks = text
+			.replace(/^WEBVTT.*\n/, "")
+			.trim()
+			.split(/\n\s*\n/);
+		for (const block of blocks) {
+			const lines = block.trim().split("\n");
+			const timingIdx = lines.findIndex((l) => l.includes("-->"));
+			if (timingIdx === -1) continue;
+			const timingLine = lines[timingIdx];
+			const match = timingLine.match(
+				/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/,
+			);
+			if (!match) continue;
+			const toMs = (hh: string, mm: string, ss: string, ms: string) =>
+				(+hh * 3600 + +mm * 60 + +ss) * 1000 + +ms;
+			const startMs = toMs(match[1], match[2], match[3], match[4]);
+			const endMs = toMs(match[5], match[6], match[7], match[8]);
+			const textContent = lines
+				.slice(timingIdx + 1)
+				.join("\n")
+				.trim();
+			if (!textContent) continue;
+			entries.push({
+				id: `sub-import-${entries.length + 1}`,
+				startMs,
+				endMs,
+				text: textContent,
+				style: { ...DEFAULT_STYLE },
+			});
+		}
+	}
+	return entries;
+}
 
 export default function VideoEditor() {
 	const {
@@ -77,6 +160,8 @@ export default function VideoEditor() {
 		speedRegions,
 		annotationRegions,
 		audioTracks,
+		subtitles,
+		transitions,
 		cropRegion,
 		wallpaper,
 		shadowIntensity,
@@ -130,6 +215,11 @@ export default function VideoEditor() {
 	const nextZoomIdRef = useRef(1);
 	const nextTrimIdRef = useRef(1);
 	const nextSpeedIdRef = useRef(1);
+	const nextSubtitleIdRef = useRef(1);
+	const nextTransitionIdRef = useRef(1);
+
+	// Drag-and-drop state
+	const [isDragOver, setIsDragOver] = useState(false);
 
 	const { shortcuts, isMac } = useShortcuts();
 	const t = useScopedT("editor");
@@ -268,6 +358,8 @@ export default function VideoEditor() {
 				speedRegions,
 				annotationRegions,
 				audioTracks,
+				subtitles,
+				transitions,
 				aspectRatio,
 				webcamLayoutPreset,
 				webcamPosition,
@@ -292,6 +384,8 @@ export default function VideoEditor() {
 		speedRegions,
 		annotationRegions,
 		audioTracks,
+		subtitles,
+		transitions,
 		aspectRatio,
 		webcamLayoutPreset,
 		webcamPosition,
@@ -386,6 +480,8 @@ export default function VideoEditor() {
 				speedRegions,
 				annotationRegions,
 				audioTracks,
+				subtitles,
+				transitions,
 				aspectRatio,
 				webcamLayoutPreset,
 				webcamPosition,
@@ -450,6 +546,9 @@ export default function VideoEditor() {
 			gifSizePreset,
 			videoPath,
 			t,
+			audioTracks,
+			subtitles,
+			transitions,
 		],
 	);
 
@@ -851,6 +950,7 @@ export default function VideoEditor() {
 				filePath,
 				name,
 				volume: 1,
+				muted: false,
 				fadeInMs: 0,
 				fadeOutMs: 0,
 				trimStartMs: 0,
@@ -898,6 +998,261 @@ export default function VideoEditor() {
 					track.id === id ? { ...track, volume } : track,
 				),
 			}));
+		},
+		[pushState],
+	);
+
+	// ───────────────────────────────────────────────────
+	// Audio Track Extended Controls (Mute, Fade, Trim)
+	// ───────────────────────────────────────────────────
+
+	const handleAudioTrackMuteToggle = useCallback(
+		(id: string) => {
+			pushState((prev) => ({
+				audioTracks: prev.audioTracks.map((track) =>
+					track.id === id ? { ...track, muted: !track.muted } : track,
+				),
+			}));
+		},
+		[pushState],
+	);
+
+	const handleAudioTrackFadeChange = useCallback(
+		(id: string, fadeInMs: number, fadeOutMs: number) => {
+			pushState((prev) => ({
+				audioTracks: prev.audioTracks.map((track) =>
+					track.id === id ? { ...track, fadeInMs, fadeOutMs } : track,
+				),
+			}));
+		},
+		[pushState],
+	);
+
+	const handleAudioTrackTrimChange = useCallback(
+		(id: string, trimStartMs: number, trimEndMs: number) => {
+			pushState((prev) => ({
+				audioTracks: prev.audioTracks.map((track) =>
+					track.id === id ? { ...track, trimStartMs, trimEndMs } : track,
+				),
+			}));
+		},
+		[pushState],
+	);
+
+	// ───────────────────────────────────────────────────
+	// Subtitles
+	// ───────────────────────────────────────────────────
+
+	const handleSubtitleAdded = useCallback(
+		(startMs: number, endMs: number) => {
+			const id = `sub-${nextSubtitleIdRef.current++}`;
+			const entry: SubtitleEntry = {
+				id,
+				startMs,
+				endMs,
+				text: "New subtitle...",
+				style: { ...DEFAULT_SUBTITLE_STYLE },
+			};
+			pushState((prev) => ({ subtitles: [...prev.subtitles, entry] }));
+		},
+		[pushState],
+	);
+
+	const handleSubtitleDelete = useCallback(
+		(id: string) => {
+			pushState((prev) => ({ subtitles: prev.subtitles.filter((s) => s.id !== id) }));
+		},
+		[pushState],
+	);
+
+	const handleSubtitleChange = useCallback(
+		(id: string, updates: Partial<SubtitleEntry>) => {
+			pushState((prev) => ({
+				subtitles: prev.subtitles.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+			}));
+		},
+		[pushState],
+	);
+
+	// ───────────────────────────────────────────────────
+	// Transitions
+	// ───────────────────────────────────────────────────
+
+	const handleTransitionAdded = useCallback(
+		(atMs: number, type: TransitionType = "fade") => {
+			const id = `transition-${nextTransitionIdRef.current++}`;
+			const region: TransitionRegion = {
+				id,
+				atMs,
+				durationMs: DEFAULT_TRANSITION_DURATION_MS,
+				type,
+			};
+			pushState((prev) => ({ transitions: [...prev.transitions, region] }));
+		},
+		[pushState],
+	);
+
+	const handleTransitionDelete = useCallback(
+		(id: string) => {
+			pushState((prev) => ({ transitions: prev.transitions.filter((tr) => tr.id !== id) }));
+		},
+		[pushState],
+	);
+
+	const handleTransitionChange = useCallback(
+		(id: string, updates: Partial<TransitionRegion>) => {
+			pushState((prev) => ({
+				transitions: prev.transitions.map((tr) => (tr.id === id ? { ...tr, ...updates } : tr)),
+			}));
+		},
+		[pushState],
+	);
+
+	// ───────────────────────────────────────────────────
+	// Split at Playhead
+	// ───────────────────────────────────────────────────
+
+	const handleSplitAtPlayhead = useCallback(() => {
+		const splitMs = Math.round(currentTime * 1000);
+		if (splitMs <= 0 || splitMs >= Math.round(duration * 1000)) return;
+
+		let didSplit = false;
+
+		pushState((prev) => {
+			const newTrimRegions = prev.trimRegions.flatMap((region) => {
+				if (splitMs > region.startMs && splitMs < region.endMs) {
+					didSplit = true;
+					const idA = `trim-${nextTrimIdRef.current++}`;
+					const idB = `trim-${nextTrimIdRef.current++}`;
+					return [
+						{ ...region, id: idA, endMs: splitMs },
+						{ ...region, id: idB, startMs: splitMs },
+					];
+				}
+				return [region];
+			});
+
+			const newSpeedRegions = prev.speedRegions.flatMap((region) => {
+				if (splitMs > region.startMs && splitMs < region.endMs) {
+					didSplit = true;
+					const idA = `speed-${nextSpeedIdRef.current++}`;
+					const idB = `speed-${nextSpeedIdRef.current++}`;
+					return [
+						{ ...region, id: idA, endMs: splitMs },
+						{ ...region, id: idB, startMs: splitMs },
+					];
+				}
+				return [region];
+			});
+
+			const newAudioTracks = prev.audioTracks.flatMap((track) => {
+				if (splitMs > track.startMs && splitMs < track.endMs) {
+					didSplit = true;
+					const idA = `audio-${nextAudioTrackIdRef.current++}`;
+					const idB = `audio-${nextAudioTrackIdRef.current++}`;
+					return [
+						{ ...track, id: idA, endMs: splitMs },
+						{ ...track, id: idB, startMs: splitMs },
+					];
+				}
+				return [track];
+			});
+
+			return {
+				trimRegions: newTrimRegions,
+				speedRegions: newSpeedRegions,
+				audioTracks: newAudioTracks,
+			};
+		});
+
+		if (didSplit) {
+			toast.success("Split at playhead");
+		} else {
+			toast.info("No regions found at playhead position");
+		}
+	}, [currentTime, duration, pushState]);
+
+	// ───────────────────────────────────────────────────
+	// Drag and Drop
+	// ───────────────────────────────────────────────────
+
+	const handleDragOver = useCallback((e: React.DragEvent) => {
+		e.preventDefault();
+		const hasFiles = e.dataTransfer.types.includes("Files");
+		if (hasFiles) setIsDragOver(true);
+	}, []);
+
+	const handleDragLeave = useCallback((e: React.DragEvent) => {
+		// Only hide overlay when leaving the root element
+		if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+			setIsDragOver(false);
+		}
+	}, []);
+
+	const handleDrop = useCallback(
+		async (e: React.DragEvent) => {
+			e.preventDefault();
+			setIsDragOver(false);
+
+			const files = Array.from(e.dataTransfer.files);
+			if (!files.length) return;
+
+			for (const file of files) {
+				const ext = file.name.split(".").pop()?.toLowerCase() || "";
+
+				if (["mp4", "mov", "webm", "avi", "mkv"].includes(ext)) {
+					// Load as video source
+					const filePath = (file as { path?: string }).path || file.name;
+					const srcPath = filePath;
+					setVideoSourcePath(srcPath);
+					setVideoPath(toFileUrl(srcPath));
+					setCurrentProjectPath(null);
+					setLastSavedSnapshot(null);
+					toast.success(`Loaded video: ${file.name}`);
+				} else if (["mp3", "wav", "ogg", "aac", "flac", "m4a"].includes(ext)) {
+					// Import as audio track
+					const filePath = (file as { path?: string }).path || file.name;
+					const durationMs = 60000; // We'll use a default; real duration loaded in timeline
+					const id = `audio-${nextAudioTrackIdRef.current++}`;
+					const newTrack: AudioTrack = {
+						id,
+						startMs: 0,
+						endMs: durationMs,
+						filePath,
+						name: file.name.replace(/\.[^.]+$/, ""),
+						volume: 1,
+						muted: false,
+						fadeInMs: 0,
+						fadeOutMs: 0,
+						trimStartMs: 0,
+						trimEndMs: 0,
+						durationMs,
+					};
+					pushState((prev) => ({ audioTracks: [...prev.audioTracks, newTrack] }));
+					toast.success(`Added audio: ${file.name}`);
+				} else if (["jpg", "jpeg", "png", "webp"].includes(ext)) {
+					// Use as background wallpaper
+					const reader = new FileReader();
+					reader.onload = (ev) => {
+						const dataUrl = ev.target?.result as string;
+						if (dataUrl) pushState({ wallpaper: dataUrl });
+					};
+					reader.readAsDataURL(file);
+					toast.success(`Set background: ${file.name}`);
+				} else if (["srt", "vtt"].includes(ext)) {
+					// Parse subtitle file
+					const text = await file.text();
+					const parsed = parseSrtVtt(text, ext as "srt" | "vtt");
+					if (parsed.length > 0) {
+						pushState((prev) => ({ subtitles: [...prev.subtitles, ...parsed] }));
+						toast.success(`Imported ${parsed.length} subtitles from ${file.name}`);
+					} else {
+						toast.error("Could not parse subtitle file.");
+					}
+				} else {
+					toast.error(`Unsupported file type: .${ext}`);
+				}
+			}
 		},
 		[pushState],
 	);
@@ -1470,7 +1825,41 @@ export default function VideoEditor() {
 	}
 
 	return (
-		<div className="flex flex-col h-screen bg-[#09090b] text-slate-200 overflow-hidden selection:bg-[#34B27B]/30">
+		<div
+			className="flex flex-col h-screen bg-[#09090b] text-slate-200 overflow-hidden selection:bg-[#34B27B]/30 relative"
+			onDragOver={handleDragOver}
+			onDragLeave={handleDragLeave}
+			onDrop={(e) => {
+				void handleDrop(e);
+			}}
+		>
+			{/* Drag-and-drop overlay */}
+			{isDragOver && (
+				<div className="absolute inset-0 z-[200] bg-black/60 backdrop-blur-sm border-2 border-dashed border-[#34B27B] rounded-lg flex items-center justify-center pointer-events-none">
+					<div className="flex flex-col items-center gap-3 text-center">
+						<div className="w-16 h-16 rounded-full bg-[#34B27B]/20 border border-[#34B27B]/40 flex items-center justify-center">
+							<svg
+								className="w-8 h-8 text-[#34B27B]"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+								/>
+							</svg>
+						</div>
+						<div className="text-[#34B27B] font-semibold text-lg">Drop to Import</div>
+						<div className="text-slate-400 text-sm">
+							Video, Audio, Image, or Subtitles (.srt/.vtt)
+						</div>
+					</div>
+				</div>
+			)}
+
 			<div
 				className="h-10 flex-shrink-0 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-6 z-50"
 				style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
@@ -1644,6 +2033,9 @@ export default function VideoEditor() {
 									onAudioTrackDelete={handleAudioTrackDelete}
 									selectedAudioTrackId={selectedAudioTrackId}
 									onSelectAudioTrack={handleSelectAudioTrack}
+									subtitles={subtitles}
+									transitions={transitions}
+									onSplitAtPlayhead={handleSplitAtPlayhead}
 									aspectRatio={aspectRatio}
 									onAspectRatioChange={(ar) =>
 										pushState({
@@ -1741,7 +2133,18 @@ export default function VideoEditor() {
 						selectedAudioTrackId={selectedAudioTrackId}
 						audioTracks={audioTracks}
 						onAudioTrackVolumeChange={handleAudioTrackVolumeChange}
+						onAudioTrackMuteToggle={handleAudioTrackMuteToggle}
+						onAudioTrackFadeChange={handleAudioTrackFadeChange}
+						onAudioTrackTrimChange={handleAudioTrackTrimChange}
 						onAudioTrackDelete={handleAudioTrackDelete}
+						subtitles={subtitles}
+						onSubtitleAdded={handleSubtitleAdded}
+						onSubtitleChange={handleSubtitleChange}
+						onSubtitleDelete={handleSubtitleDelete}
+						transitions={transitions}
+						onTransitionAdded={handleTransitionAdded}
+						onTransitionChange={handleTransitionChange}
+						onTransitionDelete={handleTransitionDelete}
 						unsavedExport={unsavedExport}
 						onSaveUnsavedExport={handleSaveUnsavedExport}
 					/>

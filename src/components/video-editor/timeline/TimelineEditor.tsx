@@ -28,14 +28,16 @@ import { cn } from "@/lib/utils";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioLabel } from "@/utils/aspectRatioUtils";
 import { formatShortcut } from "@/utils/platformUtils";
 import { TutorialHelp } from "../TutorialHelp";
-import type {
-	AnnotationRegion,
-	AudioTrack,
-	CursorTelemetryPoint,
-	SpeedRegion,
-	TrimRegion,
-	ZoomFocus,
-	ZoomRegion,
+import {
+	type AnnotationRegion,
+	type AudioTrack,
+	type CursorTelemetryPoint,
+	type SpeedRegion,
+	type SubtitleEntry,
+	type TransitionRegion,
+	type TrimRegion,
+	type ZoomFocus,
+	type ZoomRegion,
 } from "../types";
 import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
@@ -43,11 +45,14 @@ import Row from "./Row";
 import TimelineWrapper from "./TimelineWrapper";
 import { detectZoomDwellCandidates, normalizeCursorTelemetry } from "./zoomSuggestionUtils";
 
+const MAIN_VIDEO_ROW_ID = "row-main-video";
 const ZOOM_ROW_ID = "row-zoom";
 const TRIM_ROW_ID = "row-trim";
 const ANNOTATION_ROW_ID = "row-annotation";
 const SPEED_ROW_ID = "row-speed";
 const AUDIO_ROW_ID = "row-audio";
+const SUBTITLE_ROW_ID = "row-subtitle";
+const TRANSITION_ROW_ID = "row-transition";
 const FALLBACK_RANGE_MS = 1000;
 const TARGET_MARKER_COUNT = 12;
 const SUGGESTION_SPACING_MS = 1800;
@@ -88,6 +93,9 @@ interface TimelineEditorProps {
 	onAudioTrackDelete?: (id: string) => void;
 	selectedAudioTrackId?: string | null;
 	onSelectAudioTrack?: (id: string | null) => void;
+	subtitles?: SubtitleEntry[];
+	transitions?: TransitionRegion[];
+	onSplitAtPlayhead?: () => void;
 	aspectRatio: AspectRatio;
 	onAspectRatioChange: (aspectRatio: AspectRatio) => void;
 }
@@ -106,7 +114,7 @@ interface TimelineRenderItem {
 	zoomDepth?: number;
 	speedValue?: number;
 	volume?: number;
-	variant: "zoom" | "trim" | "annotation" | "speed" | "audio";
+	variant: "zoom" | "trim" | "annotation" | "speed" | "audio" | "video" | "subtitle" | "transition";
 }
 
 const SCALE_CANDIDATES = [
@@ -648,11 +656,14 @@ function Timeline({
 		[onRangeChange, videoDurationMs, range.end, range.start, sidebarWidth, pixelsToValue],
 	);
 
+	const mainVideoItems = items.filter((item) => item.rowId === MAIN_VIDEO_ROW_ID);
 	const zoomItems = items.filter((item) => item.rowId === ZOOM_ROW_ID);
 	const trimItems = items.filter((item) => item.rowId === TRIM_ROW_ID);
 	const annotationItems = items.filter((item) => item.rowId === ANNOTATION_ROW_ID);
 	const speedItems = items.filter((item) => item.rowId === SPEED_ROW_ID);
 	const audioItems = items.filter((item) => item.rowId === AUDIO_ROW_ID);
+	const subtitleItems = items.filter((item) => item.rowId === SUBTITLE_ROW_ID);
+	const transitionItems = items.filter((item) => item.rowId === TRANSITION_ROW_ID);
 
 	return (
 		<div
@@ -672,6 +683,21 @@ function Timeline({
 				timelineRef={localTimelineRef}
 				keyframes={keyframes}
 			/>
+
+			<Row id={MAIN_VIDEO_ROW_ID} isEmpty={mainVideoItems.length === 0} hint={"Video Track"}>
+				{mainVideoItems.map((item) => (
+					<Item
+						id={item.id}
+						key={item.id}
+						rowId={item.rowId}
+						span={item.span}
+						isSelected={false}
+						variant="video"
+					>
+						{item.label}
+					</Item>
+				))}
+			</Row>
 
 			<Row id={ZOOM_ROW_ID} isEmpty={zoomItems.length === 0} hint={t("hints.pressZoom")}>
 				{zoomItems.map((item) => (
@@ -758,6 +784,36 @@ function Timeline({
 					</Item>
 				))}
 			</Row>
+
+			<Row id={SUBTITLE_ROW_ID} isEmpty={subtitleItems.length === 0} hint={"Subtitles"}>
+				{subtitleItems.map((item) => (
+					<Item
+						id={item.id}
+						key={item.id}
+						rowId={item.rowId}
+						span={item.span}
+						isSelected={false}
+						variant="subtitle"
+					>
+						{item.label}
+					</Item>
+				))}
+			</Row>
+
+			<Row id={TRANSITION_ROW_ID} isEmpty={transitionItems.length === 0} hint={"Transitions"}>
+				{transitionItems.map((item) => (
+					<Item
+						id={item.id}
+						key={item.id}
+						rowId={item.rowId}
+						span={item.span}
+						isSelected={false}
+						variant="transition"
+					>
+						{item.label}
+					</Item>
+				))}
+			</Row>
 		</div>
 	);
 }
@@ -798,6 +854,9 @@ export default function TimelineEditor({
 	onAudioTrackDelete,
 	selectedAudioTrackId,
 	onSelectAudioTrack,
+	subtitles = [],
+	transitions = [],
+	onSplitAtPlayhead,
 	aspectRatio,
 	onAspectRatioChange,
 }: TimelineEditorProps) {
@@ -1382,7 +1441,7 @@ export default function TimelineEditor({
 			variant: "speed",
 		}));
 
-		const audios: TimelineRenderItem[] = audioTracks.map((track) => ({
+		const audios: TimelineRenderItem[] = (audioTracks || []).map((track) => ({
 			id: track.id,
 			rowId: AUDIO_ROW_ID,
 			span: { start: track.startMs, end: track.endMs },
@@ -1391,8 +1450,69 @@ export default function TimelineEditor({
 			variant: "audio" as const,
 		}));
 
-		return [...zooms, ...trims, ...annotations, ...speeds, ...audios];
-	}, [zoomRegions, trimRegions, annotationRegions, speedRegions, audioTracks, t]);
+		const subtitlesItems: TimelineRenderItem[] = (subtitles || []).map((sub, i) => ({
+			id: sub.id,
+			rowId: SUBTITLE_ROW_ID,
+			span: { start: sub.startMs, end: sub.endMs },
+			label: sub.text.substring(0, 20) || `Subtitle ${i + 1}`,
+			variant: "subtitle" as const,
+		}));
+
+		const transitionsItems: TimelineRenderItem[] = (transitions || []).map((tr) => ({
+			id: tr.id,
+			rowId: TRANSITION_ROW_ID,
+			span: { start: tr.atMs - tr.durationMs / 2, end: tr.atMs + tr.durationMs / 2 },
+			label: tr.type,
+			variant: "transition" as const,
+		}));
+
+		const sortedTrimsForVideo = [...trimRegions].sort((a, b) => a.startMs - b.startMs);
+		const mainVideos: TimelineRenderItem[] = [];
+		let currTime = 0;
+		let clipIndex = 1;
+		for (const trim of sortedTrimsForVideo) {
+			if (trim.startMs > currTime) {
+				mainVideos.push({
+					id: `video-clip-${clipIndex++}`,
+					rowId: MAIN_VIDEO_ROW_ID,
+					span: { start: currTime, end: trim.startMs },
+					label: `Video Clip ${clipIndex}`,
+					variant: "video" as const,
+				});
+			}
+			currTime = Math.max(currTime, trim.endMs);
+		}
+		if (currTime < Math.max(totalMs, 10)) {
+			mainVideos.push({
+				id: `video-clip-${clipIndex++}`,
+				rowId: MAIN_VIDEO_ROW_ID,
+				span: { start: currTime, end: totalMs },
+				label: `Video Clip ${clipIndex}`,
+				variant: "video" as const,
+			});
+		}
+
+		return [
+			...mainVideos,
+			...zooms,
+			...trims,
+			...annotations,
+			...speeds,
+			...audios,
+			...subtitlesItems,
+			...transitionsItems,
+		];
+	}, [
+		zoomRegions,
+		trimRegions,
+		annotationRegions,
+		speedRegions,
+		audioTracks,
+		subtitles,
+		transitions,
+		totalMs,
+		t,
+	]);
 
 	// Flat list of all non-annotation region spans for neighbour-clamping during drag/resize
 	const allRegionSpans = useMemo(() => {
@@ -1458,6 +1578,27 @@ export default function TimelineEditor({
 						title={t("buttons.addZoom")}
 					>
 						<ZoomIn className="w-4 h-4" />
+					</Button>
+					<Button
+						onClick={onSplitAtPlayhead}
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 text-slate-400 hover:text-white hover:bg-white/10 transition-all font-bold"
+						title="Split at Playhead"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						>
+							<path d="M14 6L14 18M10 6L10 18M3 12L21 12" />
+						</svg>
 					</Button>
 					<Button
 						onClick={handleSuggestZooms}

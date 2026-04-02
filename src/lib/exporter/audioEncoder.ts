@@ -20,6 +20,7 @@ export class AudioProcessor {
 		videoUrl: string,
 		trimRegions?: TrimRegion[],
 		speedRegions?: SpeedRegion[],
+		audioTracks?: import("@/components/video-editor/types").AudioTrack[],
 		readEndSec?: number,
 	): Promise<void> {
 		const sortedTrims = trimRegions ? [...trimRegions].sort((a, b) => a.startMs - b.startMs) : [];
@@ -28,13 +29,15 @@ export class AudioProcessor {
 					.filter((region) => region.endMs - region.startMs > MIN_SPEED_REGION_DELTA_MS)
 					.sort((a, b) => a.startMs - b.startMs)
 			: [];
+		const hasAudioTracks = audioTracks && audioTracks.length > 0;
 
-		// Speed edits must use timeline playback to preserve pitch
-		if (sortedSpeedRegions.length > 0) {
+		// Speed edits and custom audio mixing must use timeline playback to preserve pitch / mix correctly
+		if (sortedSpeedRegions.length > 0 || hasAudioTracks) {
 			const renderedAudioBlob = await this.renderPitchPreservedTimelineAudio(
 				videoUrl,
 				sortedTrims,
 				sortedSpeedRegions,
+				audioTracks || [],
 			);
 			if (!this.cancelled) {
 				await this.muxRenderedAudioBlob(renderedAudioBlob, muxer);
@@ -187,6 +190,7 @@ export class AudioProcessor {
 		videoUrl: string,
 		trimRegions: TrimRegion[],
 		speedRegions: SpeedRegion[],
+		audioTracks: import("@/components/video-editor/types").AudioTrack[],
 	): Promise<Blob> {
 		const media = document.createElement("audio");
 		media.src = videoUrl;
@@ -201,7 +205,18 @@ export class AudioProcessor {
 		pitchMedia.mozPreservesPitch = true;
 		pitchMedia.webkitPreservesPitch = true;
 
-		await this.waitForLoadedMetadata(media);
+		const trackNodes = audioTracks.map((t) => {
+			const el = document.createElement("audio");
+			el.src = t.filePath;
+			el.preload = "auto";
+			return { track: t, el, active: false, gain: null as GainNode | null };
+		});
+
+		await Promise.all([
+			this.waitForLoadedMetadata(media),
+			...trackNodes.map((t) => this.waitForLoadedMetadata(t.el)),
+		]);
+
 		if (this.cancelled) {
 			throw new Error("Export cancelled");
 		}
@@ -210,6 +225,12 @@ export class AudioProcessor {
 		const sourceNode = audioContext.createMediaElementSource(media);
 		const destinationNode = audioContext.createMediaStreamDestination();
 		sourceNode.connect(destinationNode);
+
+		for (const t of trackNodes) {
+			const node = audioContext.createMediaElementSource(t.el);
+			t.gain = audioContext.createGain();
+			node.connect(t.gain).connect(destinationNode);
+		}
 
 		const { recorder, recordedBlobPromise } = this.startAudioRecording(destinationNode.stream);
 		let rafId: number | null = null;
@@ -252,6 +273,7 @@ export class AudioProcessor {
 					const currentTimeMs = media.currentTime * 1000;
 					const activeTrimRegion = this.findActiveTrimRegion(currentTimeMs, trimRegions);
 
+					let skipped = false;
 					if (activeTrimRegion && !media.paused && !media.ended) {
 						const skipToTime = activeTrimRegion.endMs / 1000;
 						if (skipToTime >= media.duration) {
@@ -261,11 +283,49 @@ export class AudioProcessor {
 							return;
 						}
 						media.currentTime = skipToTime;
+						skipped = true;
 					} else {
 						const activeSpeedRegion = this.findActiveSpeedRegion(currentTimeMs, speedRegions);
 						const playbackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
 						if (Math.abs(media.playbackRate - playbackRate) > 0.0001) {
 							media.playbackRate = playbackRate;
+						}
+					}
+
+					// Update custom audio tracks sync
+					for (const t of trackNodes) {
+						const { track, el, gain } = t;
+						if (currentTimeMs >= track.startMs && currentTimeMs < track.endMs) {
+							const elapsedInTrack = currentTimeMs - track.startMs;
+							const targetTime = (elapsedInTrack + (track.trimStartMs || 0)) / 1000;
+
+							if (!t.active) {
+								t.active = true;
+								el.currentTime = targetTime;
+								el.play().catch(() => {
+									/* Ignore autoplay/interaction errors during headless export */
+								});
+							} else if (skipped || Math.abs(el.currentTime - targetTime) > 0.15) {
+								el.currentTime = targetTime;
+							}
+
+							let currentVolume = track.volume ?? 1;
+							if (track.muted) currentVolume = 0;
+							else {
+								if (track.fadeInMs && elapsedInTrack < track.fadeInMs) {
+									currentVolume *= elapsedInTrack / track.fadeInMs;
+								}
+								const remaining = track.endMs - currentTimeMs;
+								if (track.fadeOutMs && remaining < track.fadeOutMs) {
+									currentVolume *= remaining / track.fadeOutMs;
+								}
+							}
+							if (gain) gain.gain.value = currentVolume;
+						} else {
+							if (t.active) {
+								t.active = false;
+								el.pause();
+							}
 						}
 					}
 
